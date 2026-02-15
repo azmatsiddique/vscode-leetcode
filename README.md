@@ -10,7 +10,7 @@ Solve LeetCode problems in VS Code
 > NOTE: Please make sure that `Node` is in your `PATH` environment variable. You can also use the setting `leetcode.nodePath` to specify the location of your `Node.js` executable.
 
 ## Quick Start
-![demo](https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/gifs/demo.gif)
+![demo](docs/gifs/demo.gif)
 
 ## Features
 
@@ -19,7 +19,7 @@ Solve LeetCode problems in VS Code
 #### Sign in
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/sign_in.png" alt="Sign in" />
+  <img src="docs/imgs/sign_in.png" alt="Sign in" />
 </p>
 
 Simply click `Sign in to LeetCode` in the `LeetCode Explorer` will let you **sign in** with your LeetCode account.
@@ -35,7 +35,7 @@ You can also use the following command to sign in/out:
 #### Pick a Problem
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/pick_problem.png" alt="Pick a Problem" />
+  <img src="docs/imgs/pick_problem.png" alt="Pick a Problem" />
 </p>
 
 Directly click on the problem or right click the problem in the `LeetCode Explorer` and select `Preview Problem` to see the problem description.
@@ -55,7 +55,7 @@ Select `Show Problem` to directly open the file with the problem description.
 #### Editor Shortcuts
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/shortcuts.png" alt="Editor Shortcuts" />
+  <img src="docs/imgs/shortcuts.png" alt="Editor Shortcuts" />
 </p>
 
 The extension supports 4 editor shortcuts (aka Code Lens):
@@ -74,10 +74,10 @@ The extension supports 4 editor shortcuts (aka Code Lens):
 #### Search problems by Keywords
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/search.png" alt="Search problems by Keywords" />
+  <img src="docs/imgs/search.png" alt="Search problems by Keywords" />
 </p>
 
-By clicking the button ![btn_search](https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/btn_search.png) at the **explorer's navigation bar**, you can search the problems by keywords.
+By clicking the button ![btn_search](docs/imgs/btn_search.png) at the **explorer's navigation bar**, you can search the problems by keywords.
 
 ---
 
@@ -86,7 +86,7 @@ By clicking the button ![btn_search](https://raw.githubusercontent.com/LeetCode-
 #### Manage Session
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/LeetCode-OpenSource/vscode-leetcode/master/docs/imgs/session.png" alt="Manage Session" />
+  <img src="docs/imgs/session.png" alt="Manage Session" />
 </p>
 
 To manage your LeetCode sessions, just clicking the `LeetCode: ***` at the bottom of the status bar. You can **switch** between sessions or **create**, **delete** a session.
