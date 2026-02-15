@@ -10,7 +10,7 @@ Solve LeetCode problems in VS Code
 > NOTE: Please make sure that `Node` is in your `PATH` environment variable. You can also use the setting `leetcode.nodePath` to specify the location of your `Node.js` executable.
 
 ## Quick Start
-![demo](docs/gifs/demo.gif)
+![demo](docs/gifs/demo_v2.gif)
 
 ## Features
 
