@@ -14,7 +14,7 @@ import * as wsl from "./utils/wslUtils";
 class LeetCodeManager extends EventEmitter {
     private currentUser: string | undefined;
     private userStatus: UserStatus;
-    private readonly successRegex: RegExp = /(?:.*)Successfully .*login as (.*)/i;
+    private readonly successRegex: RegExp = /(?:.*)(?:Successfully .*login as (.*)|login\s+success)/i;
     private readonly failRegex: RegExp = /.*\[ERROR\].*/i;
 
     constructor() {
@@ -26,11 +26,19 @@ class LeetCodeManager extends EventEmitter {
     public async getLoginStatus(): Promise<void> {
         try {
             const result: string = await leetCodeExecutor.getUserInfo();
+            leetCodeChannel.append(`[DEBUG] getUserInfo output:\n${result}\n`);
             this.currentUser = this.tryParseUserName(result);
-            this.userStatus = UserStatus.SignedIn;
+            if (this.currentUser && this.currentUser !== "Unknown") {
+                this.userStatus = UserStatus.SignedIn;
+                leetCodeChannel.append(`[DEBUG] Login verified. Username: ${this.currentUser}\n`);
+            } else {
+                this.userStatus = UserStatus.SignedOut;
+                leetCodeChannel.append(`[DEBUG] Failed to parse username from output\n`);
+            }
         } catch (error) {
             this.currentUser = undefined;
             this.userStatus = UserStatus.SignedOut;
+            leetCodeChannel.append(`[DEBUG] getUserInfo error: ${error}\n`);
         } finally {
             this.emit("statusChanged");
         }
@@ -39,6 +47,16 @@ class LeetCodeManager extends EventEmitter {
     public async signIn(): Promise<void> {
         const picks: Array<IQuickItemEx<string>> = [];
         picks.push(
+            {
+                label: "LeetCode",
+                detail: "Use LeetCode account to login",
+                value: "LeetCode",
+            },
+            {
+                label: "Cookie",
+                detail: "Use LeetCode cookie to login",
+                value: "Cookie",
+            },
             {
                 label: "Login via Browser",
                 detail: "Open LeetCode login page and use cookie to login",
@@ -50,10 +68,6 @@ class LeetCodeManager extends EventEmitter {
             return;
         }
         const loginMethod: string = choice.value;
-        if (loginMethod === "Guest") {
-            await this.signInAsGuest();
-            return;
-        }
 
         const isByCookie: boolean = loginMethod === "Cookie" || loginMethod === "CookieWithBrowser";
         let precomputedCookie: string | undefined;
@@ -64,6 +78,10 @@ class LeetCodeManager extends EventEmitter {
                 const chromeLauncher = require("chrome-launcher");
 
                 const chromePath = await chromeLauncher.Launcher.getFirstInstallation();
+                if (!chromePath) {
+                    throw new Error("Chrome installation not found.");
+                }
+
                 const browser = await puppeteer.launch({
                     executablePath: chromePath,
                     headless: false,
@@ -94,27 +112,53 @@ class LeetCodeManager extends EventEmitter {
                             if (session && csrf) {
                                 found = true;
                                 clearInterval(interval);
-                                await browser.close();
-                                resolve(`LEETCODE_SESSION=${session.value};csrftoken=${csrf.value};`);
+                                const cookieValue = `LEETCODE_SESSION=${session.value};csrftoken=${csrf.value};`;
+                                leetCodeChannel.append(`[DEBUG] Cookies extracted successfully. Session value: ${session.value.substring(0, 20)}...\n`);
+                                // Give it a moment before closing to ensure everything is captured
+                                setTimeout(async () => {
+                                    try {
+                                        await browser.close();
+                                    } catch (e) {
+                                        leetCodeChannel.append(`[DEBUG] Browser close error: ${e}\n`);
+                                    }
+                                    resolve(cookieValue);
+                                }, 1000);
                             }
                         } catch (err) {
-                            // Ignore errors during interval (e.g. browser closing)
+                            leetCodeChannel.append(`[DEBUG] Cookie check error: ${err}\n`);
                         }
                     }, 1000);
 
                     browser.on("disconnected", () => {
                         clearInterval(interval);
-                        if (!found) resolve(undefined);
+                        if (!found) {
+                            leetCodeChannel.append(`[DEBUG] Browser disconnected without finding cookies\n`);
+                            resolve(undefined);
+                        }
                     });
                 });
             } catch (error) {
-                vscode.window.showErrorMessage("Failed to launch browser for login. Please ensure Chrome is installed.");
+                vscode.window.showErrorMessage(`Failed to launch browser for login: ${error.message}. Please ensure Chrome is installed.`);
                 return;
             }
 
-            if (!precomputedCookie) {
-                vscode.window.showErrorMessage("Login cancelled or failed to retrieve cookies.");
-                return;
+            if (precomputedCookie) {
+                const sessionMatch = precomputedCookie.match(/LEETCODE_SESSION=(.+?);/);
+                const csrfMatch = precomputedCookie.match(/csrftoken=(.+?);/);
+                if (sessionMatch && csrfMatch) {
+                    await leetCodeExecutor.saveUser({
+                        sessionId: sessionMatch[1],
+                        sessionCSRF: csrfMatch[1],
+                        name: "browser-login",
+                        paid: false,
+                    });
+                    leetCodeChannel.append("[DEBUG] Browser login: Session cache updated manually\n");
+                    await this.getLoginStatus();
+                    if (this.userStatus === UserStatus.SignedIn) {
+                        vscode.window.showInformationMessage("Successfully signed in via browser.");
+                        return;
+                    }
+                }
             }
         }
 
@@ -124,8 +168,9 @@ class LeetCodeManager extends EventEmitter {
         }
 
         const inMessage: string = isByCookie ? "sign in by cookie" : "sign in";
+        leetCodeChannel.append(`[DEBUG] Starting login process: method=${loginMethod}, arg=${commandArg}\n`);
         try {
-            const userName: string | undefined = await new Promise(async (resolve: (res: string | undefined) => void, reject: (e: Error) => void): Promise<void> => {
+            await new Promise(async (resolve: (res: string | undefined) => void, reject: (e: Error) => void): Promise<void> => {
 
                 const leetCodeBinaryPath: string = await leetCodeExecutor.getLeetCodeBinaryPath();
 
@@ -138,8 +183,10 @@ class LeetCodeManager extends EventEmitter {
 
                 childProc.stdout.on("data", async (data: string | Buffer) => {
                     data = data.toString();
-                    leetCodeChannel.append(data);
-                    if (data.includes("twoFactorCode")) {
+                    // Strip ANSI escape codes
+                    const cleanData = data.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+                    leetCodeChannel.append(cleanData);
+                    if (cleanData.includes("twoFactorCode")) {
                         const twoFactor: string | undefined = await vscode.window.showInputBox({
                             prompt: "Enter two-factor code.",
                             ignoreFocusOut: true,
@@ -151,32 +198,45 @@ class LeetCodeManager extends EventEmitter {
                         }
                         childProc.stdin.write(`${twoFactor}\n`);
                     }
-                    const successMatch: RegExpMatchArray | null = data.match(this.successRegex);
+                    const successMatch: RegExpMatchArray | null = cleanData.match(this.successRegex);
                     if (successMatch && successMatch[1]) {
                         childProc.stdin.end();
                         return resolve(successMatch[1]);
-                    } else if (data.match(this.failRegex)) {
+                    } else if (cleanData.match(this.failRegex)) {
                         childProc.stdin.end();
-                        return reject(new Error("Faile to login"));
+                        return reject(new Error("Failed to login"));
                     }
                 });
 
-                childProc.stderr.on("data", (data: string | Buffer) => leetCodeChannel.append(data.toString()));
+                childProc.stderr.on("data", (data: string | Buffer) => {
+                    const cleanData = data.toString().replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+                    leetCodeChannel.append(cleanData);
+                });
 
                 childProc.on("error", reject);
 
+                childProc.on("close", (code: number) => {
+                    if (code !== 0) {
+                        reject(new Error(`Login process exited with code ${code}`));
+                    } else {
+                        // resolve(undefined) if not already resolved by stdout match
+                        resolve(undefined);
+                    }
+                });
+
                 // For cookie login, we might not strictly need username, but CLI flow might ask.
-                // If using cookie, we can input any non-empty string as username if prompted.
-                // However, existing logic prompts for it. Let's keep existing logic for username.
-                const name: string | undefined = await vscode.window.showInputBox({
+                // If using 'Login via Browser', we can use a dummy username since the cookie is what matters.
+                const name: string | undefined = (loginMethod === "CookieWithBrowser") ? "browser-login" : await vscode.window.showInputBox({
                     prompt: "Enter username or E-mail.",
                     ignoreFocusOut: true,
                     validateInput: (s: string): string | undefined => s && s.trim() ? undefined : "The input must not be empty",
                 });
                 if (!name) {
                     childProc.kill();
+                    leetCodeChannel.append("[DEBUG] Login aborted: username/email input cancelled\n");
                     return resolve(undefined);
                 }
+                leetCodeChannel.append(`[DEBUG] Sending username: ${name}\n`);
                 childProc.stdin.write(`${name}\n`);
 
                 const pwd: string | undefined = precomputedCookie || await vscode.window.showInputBox({
@@ -187,15 +247,18 @@ class LeetCodeManager extends EventEmitter {
                 });
                 if (!pwd) {
                     childProc.kill();
+                    leetCodeChannel.append("[DEBUG] Login aborted: password/cookie input cancelled\n");
                     return resolve(undefined);
                 }
+                leetCodeChannel.append(`[DEBUG] Sending ${isByCookie ? "cookie" : "password"}\n`);
                 childProc.stdin.write(`${pwd}\n`);
             });
-            if (userName) {
+            // Always verify login status after login attempt
+            await this.getLoginStatus();
+            if (this.userStatus === UserStatus.SignedIn) {
                 vscode.window.showInformationMessage(`Successfully ${inMessage}.`);
-                this.currentUser = userName;
-                this.userStatus = UserStatus.SignedIn;
-                this.emit("statusChanged");
+            } else {
+                vscode.window.showErrorMessage(`Failed to ${inMessage}.`);
             }
         } catch (error) {
             promptForOpenOutputChannel(`Failed to ${inMessage}. Please open the output channel for details`, DialogType.error);
@@ -224,10 +287,35 @@ class LeetCodeManager extends EventEmitter {
     }
 
     private tryParseUserName(output: string): string {
-        const reg: RegExp = /^\s*.\s*(.+?)\s*https:\/\/leetcode/m;
-        const match: RegExpMatchArray | null = output.match(reg);
+        const cleanOutput = output.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, "");
+
+        // Try primary pattern: "✔ username https://leetcode"
+        let reg: RegExp = /^\s*.\s*(.+?)\s*https:\/\/leetcode/m;
+        let match: RegExpMatchArray | null = cleanOutput.match(reg);
         if (match && match.length === 2) {
             return match[1].trim();
+        }
+
+        // Try alternative patterns for different CLI versions
+        // Pattern: "username" on its own line with profile URL or leetcode reference
+        reg = /^\s*(.+?)\s*$\n.*leetcode/m;
+        match = cleanOutput.match(reg);
+        if (match && match.length === 2) {
+            const candidate = match[1].trim();
+            if (candidate && !candidate.includes("ERROR") && !candidate.includes("error")) {
+                return candidate;
+            }
+        }
+
+        // Pattern: look for lines with user profile info
+        const lines = cleanOutput.split("\n");
+        for (const line of lines) {
+            if ((line.includes("✔") || line.includes("*")) && !line.includes("ERROR") && line.length > 2) {
+                const userMatch = line.match(/✔\s+(.+?)(?:\s|$)/);
+                if (userMatch && userMatch[1]) {
+                    return userMatch[1].trim();
+                }
+            }
         }
 
         return "Unknown";

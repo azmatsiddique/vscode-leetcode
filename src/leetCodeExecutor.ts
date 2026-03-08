@@ -79,6 +79,14 @@ class LeetCodeExecutor implements Disposable {
         return await await this.executeCommandEx(this.nodeExecutable, [await this.getLeetCodeBinaryPath(), "user", "-L"]);
     }
 
+    public async saveUser(user: { sessionId: string, sessionCSRF: string, name: string, paid: boolean }): Promise<void> {
+        const lcDir = path.join(process.env.HOME || process.env.USERPROFILE || "", ".lc", "leetcode");
+        await fse.ensureDir(lcDir);
+        const userPath = path.join(lcDir, "user.json");
+        await fse.writeJson(userPath, user);
+    }
+
+
     public async listProblems(showLocked: boolean): Promise<string> {
         return await this.executeCommandEx(this.nodeExecutable, showLocked ?
             [await this.getLeetCodeBinaryPath(), "list"] :
